@@ -1,0 +1,94 @@
+---
+title: "Predicting the manner in which people do exercises"
+date: "Thursday, January 24, 2015"
+output: html_document
+---
+
+# Introduction
+
+We wanted to build a prediction model which can predict the manner in which people do exercises. The manner is categorized by five characters: A, B, C, D and E. To train the prediction model, we utilized the data made available on http://groupware.les.inf.puc-rio.br/har by generous individuals. 
+
+This report documents the steps taken to train and validate a prediction model that we use to predict 20 sets of test cases. 
+
+# Loading the training data
+
+We first download the training data file from https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv to the working directory, naming it as **pml-training.csv**. 
+
+We also download the test data which we will use to answer the project submission from https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv to the working directory, naming it as **pml-testing.csv**.
+
+With the training data file and testing data file in our working directory, we then load them into R variables via the following codes, looking out for the strings *'NA'* and *'#DIV/0!'* to include as NA values:
+```{r}
+pmlTrainingDf <- read.csv(file='pml-training.csv', header=TRUE, na.strings=c('NA', '#DIV/0!'))
+pmlTestingDf <- read.csv(file='pml-testing.csv', header=TRUE, na.strings=c('NA', '#DIV/0!'))
+```
+
+# Cleaning up the training data and testing data
+
+We notice that there are a large number of cells with NA values. The columns that contain NA values should not be used as predictors to build our prediction model. As such, before training our model, we first weed out columns that contain NA values from both the training and testing data set.
+
+```{r}
+cleansedTrainingDf <- pmlTrainingDf[ , apply(pmlTrainingDf, 2, function(x) !any(is.na(x)))]
+cleansedTestingDf <- pmlTestingDf[ , apply(pmlTestingDf, 2, function(x) !any(is.na(x)))]
+```
+
+We also need to take away the columns that may mislead the model, such as users' personal data, time when the recording was done and etc.
+
+```{r}
+cleansedTrainingDf <- cleansedTrainingDf[, -c(1:6)]
+cleansedTestingDf <- cleansedTestingDf[, -c(1:6)]
+```
+
+With that, we will have 54 columns left in the training data set which we can use for building our prediction model, as well as, 54 columns from the question data set for our model to predict the manner in which people do exercises.
+
+# Choice of prediction method and expected out of sample error
+
+We chose random forest as the prediction model for predicting the manner in which people do exercises. Known for its accuracy, we will expect a low out of sample error rate of less than 1 percent from our prediction model based on random forest.
+
+# Partitioning data from `cleansedTrainingDf`
+
+After selecting the prediction method to use, we then prepare two sets of data from `cleansedTrainDf`; one for training our prediction model and the other for checking the accuracy of the trained model.
+
+``` {r results='hide', message=FALSE, warning=FALSE}
+library(caret)
+
+set.seed(123456)
+
+indexOfRowsForDataToTrainModel <- createDataPartition(y = cleansedTrainingDf$classe, p=0.7, list = FALSE)
+dataToTrainModel <- cleansedTrainingDf[indexOfRowsForDataToTrainModel, ]
+dataToCheckModel <- cleansedTrainingDf[-indexOfRowsForDataToTrainModel, ]
+```
+
+# Training our model and validating its accuracy
+
+We train our model using data from `dataToTrainModel`.
+
+```{r results='hide', message=FALSE, warning=FALSE}
+trainingControlOptions <-trainControl(method="cv", number=5, allowParallel=TRUE, verbose=FALSE)
+predictionModel <- train(classe ~ . , method = 'rf', data = dataToTrainModel, verbose = FALSE, trControl = trainingControlOptions)
+```
+
+And compute a confusion matrix on the predictions performed on `dataToCheckModel`.
+
+```{r}
+predictionsFromTestData <- predict(predictionModel, newdata = dataToCheckModel)
+
+confusionMatrix(predictionsFromTestData, dataToCheckModel$classe)
+```
+
+Just as we had expected, the confusion matrix tells us that our model had achieved a accuracy of 0.9978 on predictions done on `dataToCheckModel`. The 95% confidence interval level for the accuracy value given was also in the high range.
+
+# Generating submission files
+
+The confusion matrix asserted us that we can proceed to use our model to generate the files for project submission. Hence, we proceed to call the `pml_write_files` function to create the submission files from the results retrieved from using our prediction model on the 20 test cases.
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predict(predictionModel, newdata = cleansedTestingDf))
+```
